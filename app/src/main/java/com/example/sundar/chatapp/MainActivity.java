@@ -1,9 +1,6 @@
 package com.example.sundar.chatapp;
 
 import android.annotation.TargetApi;
-import android.content.Context;
-import android.net.nsd.NsdManager;
-import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.support.v7.app.ActionBarActivity;
@@ -28,11 +25,11 @@ import java.util.Enumeration;
 
 public class MainActivity extends ActionBarActivity {
 
-    String TAG="Hi";
+    String TAG="NsdHelper";
+    NsdHelper1 mNsdHelper1 = null;
 
     static final int SocketServerPORT = 8080;
-    private String SERVICE_TYPE = "_http._tcp.";
-    private String SERVICE_NAME = "ChatApp1";
+
 
     LinearLayout loginPanel, chatPanel;
 
@@ -50,9 +47,7 @@ public class MainActivity extends ActionBarActivity {
     ChatClientThread chatClientThread = null;
     ChatClientThread1 chatClientThread1 = null;
 
-    String mServiceName;
-    NsdManager.RegistrationListener mRegistrationListener;
-    NsdManager mNsdManager;
+
 
 
 
@@ -69,7 +64,6 @@ public class MainActivity extends ActionBarActivity {
         editTextUserName = (EditText) findViewById(R.id.username);
         editTextAddress = (EditText) findViewById(R.id.address);
         buttonConnect = (Button) findViewById(R.id.connect);
-        //private String SERVICE_NAME = "Client Device";
 
 
 
@@ -89,7 +83,9 @@ public class MainActivity extends ActionBarActivity {
         buttonSend.setOnClickListener(buttonSendOnClickListener);
         buttonDisconnect.setOnClickListener(buttonDisconnectOnClickListener);
 
-        mNsdManager = (NsdManager) getSystemService(Context.NSD_SERVICE);
+        mNsdHelper1 = new NsdHelper1(this);
+        mNsdHelper1.initializeNsd();
+
 
 
 
@@ -98,84 +94,41 @@ public class MainActivity extends ActionBarActivity {
         chatServerThread.start();
 
 
-        mNsdManager.discoverServices(SERVICE_TYPE,
-                NsdManager.PROTOCOL_DNS_SD, mDiscoveryListener);
 
 
     }
-    NsdManager.DiscoveryListener mDiscoveryListener = new NsdManager.DiscoveryListener() {
-
-        //  Called as soon as service discovery begins.
-        @Override
-        public void onDiscoveryStarted(String regType) {
-            Log.d("Hi", "Service discovery started");
+    public void clickAdvertise(View v) {
+        // Register service
+        if(serverSocket.getLocalPort() > -1) {
+            mNsdHelper1.registerService(serverSocket.getLocalPort());
+        } else {
+            Log.d(TAG, "ServerSocket isn't bound.");
         }
+    }
+    public void clickDiscover(View v) {
+        mNsdHelper1.discoverServices();
+    }
 
-        @Override
-        public void onServiceFound(NsdServiceInfo service) {
-            // A service was found!  Do something with it.
-            Log.d(TAG, "Service discovery success" + service);
-            if (!service.getServiceType().equals(SERVICE_TYPE)) {
-                // Service type is the string containing the protocol and
-                // transport layer for this service.
-                Log.d(TAG, "Unknown Service Type: " + service.getServiceType());
-            } else if (service.getServiceName().equals(mServiceName)) {
-                // The name of the service tells the user what they'd be
-                // connecting to. It could be "Bob's Chat App".
-                Log.d(TAG, "Same machine: " + mServiceName);
-            } else if (service.getServiceName().contains("NsdChat")){
-                mNsdManager.resolveService(service, mResolveListener);
-            }
+    @Override
+    protected void onPause() {
+        if (mNsdHelper1 != null) {
+            mNsdHelper1.stopDiscovery();
+
         }
+        super.onPause();
+    }
 
-        @Override
-        public void onServiceLost(NsdServiceInfo service) {
-            // When the network service is no longer available.
-            // Internal bookkeeping code goes here.
-            Log.e(TAG, "service lost" + service);
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mNsdHelper1 != null) {
+            mNsdHelper1.discoverServices();
         }
+    }
 
-        @Override
-        public void onDiscoveryStopped(String serviceType) {
-            Log.i(TAG, "Discovery stopped: " + serviceType);
-        }
 
-        @Override
-        public void onStartDiscoveryFailed(String serviceType, int errorCode) {
-            Log.e(TAG, "Discovery failed: Error code:" + errorCode);
-            mNsdManager.stopServiceDiscovery(this);
-        }
 
-        @Override
-        public void onStopDiscoveryFailed(String serviceType, int errorCode) {
-            Log.e(TAG, "Discovery failed: Error code:" + errorCode);
-            mNsdManager.stopServiceDiscovery(this);
-        }
-    };
 
-    NsdManager.ResolveListener mResolveListener = new NsdManager.ResolveListener() {
-
-        @Override
-        public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
-            // Called when the resolve fails. Use the error code to debug.
-            Log.e(TAG, "Resolve failed " + errorCode);
-            Log.e(TAG, "serivce = " + serviceInfo);
-        }
-
-        @Override
-        public void onServiceResolved(NsdServiceInfo serviceInfo) {
-            Log.d(TAG, "Resolve Succeeded. " + serviceInfo);
-
-            if (serviceInfo.getServiceName().equals(SERVICE_NAME)) {
-                Log.d(TAG, "Same IP.");
-                return;
-            }
-//
-//            // Obtain port and IP
-//            hostPort = serviceInfo.getPort();
-//            hostAddress = serviceInfo.getHost();
-        }
-    };
 
 
 
@@ -253,7 +206,7 @@ public class MainActivity extends ActionBarActivity {
             chatPanel.setVisibility(View.VISIBLE);
 
             chatClientThread1 = new ChatClientThread1(
-                    textUserName, textAddress, SocketServerPORT);
+                    textUserName, textAddress, serverSocket.getLocalPort());
             chatClientThread1.start();
         }
 
@@ -264,6 +217,7 @@ public class MainActivity extends ActionBarActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        mNsdHelper1.tearDown();
 
         if (serverSocket != null) {
             try {
@@ -280,36 +234,10 @@ public class MainActivity extends ActionBarActivity {
         @Override
         public void run() {
             Socket socket = null;
-            mRegistrationListener = new NsdManager.RegistrationListener() {
 
-                @Override
-                public void onServiceRegistered(NsdServiceInfo NsdServiceInfo) {
-                    // Save the service name.  Android may have changed it in order to
-                    // resolve a conflict, so update the name you initially requested
-                    // with the name Android actually used.
-                    mServiceName = NsdServiceInfo.getServiceName();
-                    Log.v("Hi","Registered with name"+mServiceName );
-                }
-
-                @Override
-                public void onRegistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                    // Registration failed!  Put debugging code here to determine why.
-                }
-
-                @Override
-                public void onServiceUnregistered(NsdServiceInfo arg0) {
-                    // Service has been unregistered.  This only happens when you call
-                    // NsdManager.unregisterService() and pass in this listener.
-                }
-
-                @Override
-                public void onUnregistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                    // Unregistration failed.  Put debugging code here to determine why.
-                }
-            };
 
             try {
-                serverSocket = new ServerSocket(SocketServerPORT);
+                serverSocket = new ServerSocket(0);
                 MainActivity.this.runOnUiThread(new Runnable() {
 
                     @Override
@@ -319,7 +247,7 @@ public class MainActivity extends ActionBarActivity {
                     }
 
                 });
-                registerService(serverSocket.getLocalPort());
+
 
                 while (!flag) {
                     socket = serverSocket.accept();
@@ -351,17 +279,7 @@ public class MainActivity extends ActionBarActivity {
             }
 
         }
-        public void registerService(int port) {
-            NsdServiceInfo serviceInfo = new NsdServiceInfo();
-            serviceInfo.setServiceName("NsdChat1");
-            serviceInfo.setServiceType("_http._tcp.");
-            serviceInfo.setPort(port);
 
-           //mNsdManager = (NsdManager) getSystemService(Context.NSD_SERVICE);
-
-            mNsdManager.registerService(
-                    serviceInfo, NsdManager.PROTOCOL_DNS_SD, mRegistrationListener);
-        }
 
     }
 

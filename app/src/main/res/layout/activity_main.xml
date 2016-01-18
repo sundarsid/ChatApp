@@ -59,6 +59,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Connect" />
+        <Button android:id="@+id/advertise_btn"
+            android:layout_width="96dp"
+            android:layout_height="64dp"
+            android:onClick="clickAdvertise"
+            android:text="Register"/>
+        <Button android:id="@+id/discover_btn"
+            android:layout_width="96dp"
+            android:layout_height="64dp"
+            android:onClick="clickDiscover"
+            android:text="Discover"/>
 
 
     </LinearLayout>
